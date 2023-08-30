@@ -90,10 +90,7 @@ def pick_newest(ver1: str, ver2: str) -> str:
 
     presort = [tokenize_string(ver1), tokenize_string(ver2)]
     postsort = sorted(presort)
-    if presort == postsort:
-        return ver2
-    else:
-        return ver1
+    return ver2 if presort == postsort else ver1
 
 
 def is_build_older(ver1: str, ver2: str) -> int:
@@ -115,7 +112,9 @@ def is_build_older(ver1: str, ver2: str) -> int:
 
 
 def is_compatible(build, since, until) -> bool:
-    return (not since or is_build_older(since, build) < 0) and (not until or 0 < is_build_older(until, build))
+    return (not since or is_build_older(since, build) < 0) and (
+        not until or is_build_older(until, build) > 0
+    )
 
 
 def get_newest_compatible(pid: str, build: str, plugin_infos: dict, quiet: bool) -> [None, str]:
@@ -129,10 +128,9 @@ def get_newest_compatible(pid: str, build: str, plugin_infos: dict, quiet: bool)
 
     if newest_ver is not None:
         return "https://plugins.jetbrains.com/files/" + plugin_infos[newest_index]["file"]
-    else:
-        if not quiet:
-            print(f"WARNING: Could not find version of plugin {pid} compatible with build {build}")
-        return None
+    if not quiet:
+        print(f"WARNING: Could not find version of plugin {pid} compatible with build {build}")
+    return None
 
 
 def flatten(main_list: list[list]) -> list:
@@ -147,9 +145,9 @@ def get_compatible_ides(pid: str) -> list[str]:
 
 
 def id_to_name(pid: str, channel="") -> str:
-    channel_ext = "-" + channel if channel else ""
+    channel_ext = f"-{channel}" if channel else ""
 
-    resp = get("https://plugins.jetbrains.com/api/plugins/" + pid).json()
+    resp = get(f"https://plugins.jetbrains.com/api/plugins/{pid}").json()
     return resp["link"].split("-", 1)[1] + channel_ext
 
 
@@ -158,7 +156,7 @@ def sort_dict(to_sort: dict) -> dict:
 
 
 def make_name_mapping(infos: dict) -> dict[str, str]:
-    return sort_dict({i: id_to_name(*i.split("-", 1)) for i in infos.keys()})
+    return sort_dict({i: id_to_name(*i.split("-", 1)) for i in infos})
 
 
 def make_plugin_files(plugin_infos: dict, ide_versions: dict, quiet: bool, extra_builds: list[str]) -> dict:
@@ -193,21 +191,16 @@ def get_hash(url):
     path_process = run(args, capture_output=True)
     path = path_process.stdout.decode().split("\n")[1]
     result = run(["nix", "--extra-experimental-features", "nix-command", "hash", "path", path], capture_output=True)
-    result_contents = result.stdout.decode()[:-1]
-    if not result_contents:
+    if result_contents := result.stdout.decode()[:-1]:
+        return result_contents
+    else:
         raise RuntimeError(result.stderr.decode())
-    return result_contents
 
 
 def print_file_diff(old, new):
     added = new.copy()
     removed = old.copy()
-    to_delete = []
-
-    for file in added:
-        if file in removed:
-            to_delete.append(file)
-
+    to_delete = [file for file in added if file in removed]
     for file in to_delete:
         added.remove(file)
         removed.remove(file)
@@ -215,13 +208,13 @@ def print_file_diff(old, new):
     if removed:
         print("\nRemoved:")
         for file in removed:
-            print(" - " + file)
+            print(f" - {file}")
         print()
 
     if added:
         print("\nAdded:")
         for file in added:
-            print(" + " + file)
+            print(f" + {file}")
         print()
 
 
@@ -229,13 +222,10 @@ def get_file_hashes(file_list: list[str], refetch_all: bool) -> dict[str, str]:
     old = {} if refetch_all else get_old_file_hashes()
     print_file_diff(list(old.keys()), file_list)
 
-    file_hashes = {}
-    for file in sorted(file_list):
-        if file in old:
-            file_hashes[file] = old[file]
-        else:
-            file_hashes[file] = get_hash(file)
-    return file_hashes
+    return {
+        file: old[file] if file in old else get_hash(file)
+        for file in sorted(file_list)
+    }
 
 
 def get_args() -> tuple[list[str], list[str], bool, bool, bool, list[str]]:
@@ -344,10 +334,7 @@ def get_ide_versions() -> dict:
 def get_file_names(plugins: dict[str, dict]) -> list[str]:
     result = []
     for plugin_info in plugins.values():
-        for url in plugin_info["builds"].values():
-            if url is not None:
-                result.append(url)
-
+        result.extend(url for url in plugin_info["builds"].values() if url is not None)
     return list(set(result))
 
 
@@ -362,8 +349,6 @@ def write_result(to_write):
 
 def main():
     add, remove, refetch_all, list_ids, quiet, extra_builds = get_args()
-    result = {}
-
     print("Fetching plugin info")
     ids = get_plugin_ids(add, remove)
     if list_ids:
@@ -372,8 +357,11 @@ def main():
 
     print("Working out which plugins need which files")
     ide_versions = get_ide_versions()
-    result["plugins"] = make_plugin_files(plugin_infos, ide_versions, quiet, extra_builds)
-
+    result = {
+        "plugins": make_plugin_files(
+            plugin_infos, ide_versions, quiet, extra_builds
+        )
+    }
     print("Getting file hashes")
     file_list = get_file_names(result["plugins"])
     result["files"] = get_file_hashes(file_list, refetch_all)

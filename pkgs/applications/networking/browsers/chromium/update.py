@@ -3,6 +3,7 @@
 
 """This script automatically updates chromium, google-chrome, chromedriver, and ungoogled-chromium
 via upstream-info.nix."""
+
 # Usage: ./update.py [--commit]
 
 import base64
@@ -23,9 +24,9 @@ RELEASES_URL = 'https://versionhistory.googleapis.com/v1/chrome/platforms/linux/
 DEB_URL = 'https://dl.google.com/linux/chrome/deb/pool/main/g'
 BUCKET_URL = 'https://commondatastorage.googleapis.com/chromium-browser-official'
 
-PIN_PATH = dirname(abspath(__file__)) + '/upstream-info.nix'
-UNGOOGLED_FLAGS_PATH = dirname(abspath(__file__)) + '/ungoogled-flags.toml'
-COMMIT_MESSAGE_SCRIPT = dirname(abspath(__file__)) + '/get-commit-message.py'
+PIN_PATH = f'{dirname(abspath(__file__))}/upstream-info.nix'
+UNGOOGLED_FLAGS_PATH = f'{dirname(abspath(__file__))}/ungoogled-flags.toml'
+COMMIT_MESSAGE_SCRIPT = f'{dirname(abspath(__file__))}/get-commit-message.py'
 
 
 def load_as_json(path):
@@ -66,7 +67,7 @@ def get_file_revision(revision, file_path):
 def get_chromedriver(channel):
     """Get the latest chromedriver builds given a channel"""
     # See https://chromedriver.chromium.org/downloads/version-selection#h.4wiyvw42q63v
-    chromedriver_versions_url = f'https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json'
+    chromedriver_versions_url = 'https://googlechromelabs.github.io/chrome-for-testing/last-known-good-versions-with-downloads.json'
     print(f'GET {chromedriver_versions_url}')
     with urlopen(chromedriver_versions_url) as http_response:
         chromedrivers = json.load(http_response)
@@ -108,7 +109,7 @@ def get_latest_ungoogled_chromium_tag(linux_stable_versions):
     with urlopen(api_tag_url) as http_response:
         tags = json.load(http_response)
         for tag in tags:
-            if not tag['name'].split('-')[0] in linux_stable_versions:
+            if tag['name'].split('-')[0] not in linux_stable_versions:
                 continue
 
             return tag['name']
