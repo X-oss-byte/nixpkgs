@@ -28,9 +28,7 @@ def option_is(option: Option, key: str, typ: str) -> Optional[dict[str, str]]:
         return None
     if type(option[key]) != dict:
         return None
-    if option[key].get('_type') != typ: # type: ignore[union-attr]
-        return None
-    return option[key] # type: ignore[return-value]
+    return None if option[key].get('_type') != typ else option[key]
 
 class BaseConverter(Converter[md.TR], Generic[md.TR]):
     __option_block_separator__: str
@@ -51,29 +49,27 @@ class BaseConverter(Converter[md.TR], Generic[md.TR]):
     def _format_decl_def_loc(self, loc: OptionLoc) -> tuple[Optional[str], str]:
         # locations can be either plain strings (specific to nixpkgs), or attrsets
         # { name = "foo/bar.nix"; url = "https://github.com/....."; }
-        if isinstance(loc, str):
+        if not isinstance(loc, str):
+            return (loc['url'] if 'url' in loc else None, loc['name'])
             # Hyperlink the filename either to the NixOS github
             # repository (if it’s a module and we have a revision number),
             # or to the local filesystem.
-            if not loc.startswith('/'):
-                if self._revision == 'local':
-                    href = f"https://github.com/NixOS/nixpkgs/blob/master/{loc}"
-                else:
-                    href = f"https://github.com/NixOS/nixpkgs/blob/{self._revision}/{loc}"
-            else:
-                href = f"file://{loc}"
-            # Print the filename and make it user-friendly by replacing the
-            # /nix/store/<hash> prefix by the default location of nixos
-            # sources.
-            if not loc.startswith('/'):
-                name = f"<nixpkgs/{loc}>"
-            elif 'nixops' in loc and '/nix/' in loc:
-                name = f"<nixops/{loc[loc.find('/nix/') + 5:]}>"
-            else:
-                name = loc
-            return (href, name)
+        if loc.startswith('/'):
+            href = f"file://{loc}"
+        elif self._revision == 'local':
+            href = f"https://github.com/NixOS/nixpkgs/blob/master/{loc}"
         else:
-            return (loc['url'] if 'url' in loc else None, loc['name'])
+            href = f"https://github.com/NixOS/nixpkgs/blob/{self._revision}/{loc}"
+        # Print the filename and make it user-friendly by replacing the
+        # /nix/store/<hash> prefix by the default location of nixos
+        # sources.
+        if not loc.startswith('/'):
+            name = f"<nixpkgs/{loc}>"
+        elif 'nixops' in loc and '/nix/' in loc:
+            name = f"<nixops/{loc[loc.find('/nix/') + 5:]}>"
+        else:
+            name = loc
+        return (href, name)
 
     @abstractmethod
     def _decl_def_header(self, header: str) -> list[str]: raise NotImplementedError()
@@ -137,7 +133,7 @@ class BaseConverter(Converter[md.TR], Generic[md.TR]):
         if defs := option.get('definitions'):
             blocks.append(self._render_decl_def("Defined by", defs))
 
-        for part in [ p for p in blocks[0:-1] if p ]:
+        for part in [p for p in blocks[:-1] if p]:
             part.append(self.__option_block_separator__)
 
         return [ l for part in blocks for l in part ]
@@ -228,7 +224,7 @@ class DocBookConverter(BaseConverter[OptionsDocBookRenderer]):
 
     def _decl_def_entry(self, href: Optional[str], name: str) -> list[str]:
         if href is not None:
-            href = " xlink:href=" + xml.quoteattr(href)
+            href = f" xlink:href={xml.quoteattr(href)}"
         return [
             f"<member><filename{href}>",
             xml.escape(name),
@@ -260,10 +256,11 @@ class DocBookConverter(BaseConverter[OptionsDocBookRenderer]):
             id = make_xml_id(self._id_prefix + name)
             result += [
                 "<varlistentry>",
-                # NOTE adding extra spaces here introduces spaces into xref link expansions
-                (f"<term xlink:href={xml.quoteattr('#' + id)} xml:id={xml.quoteattr(id)}>" +
-                 f"<option>{xml.escape(name)}</option></term>"),
-                "<listitem>"
+                (
+                    f"<term xlink:href={xml.quoteattr(f'#{id}')} xml:id={xml.quoteattr(id)}>"
+                    + f"<option>{xml.escape(name)}</option></term>"
+                ),
+                "<listitem>",
             ]
             result += opt.lines
             result += [
@@ -307,7 +304,7 @@ class ManpageConverter(BaseConverter[OptionsManpageRenderer]):
         return result._replace(links=links)
 
     def add_options(self, options: dict[str, Any]) -> None:
-        for (k, v) in options.items():
+        for k in options:
             self._options_by_id[f'#{make_xml_id(f"opt-{k}")}'] = k
         return super().add_options(options)
 
@@ -378,7 +375,7 @@ class ManpageConverter(BaseConverter[OptionsManpageRenderer]):
                     if links[i].startswith('#opt-'):
                         md_links += f"{i+1}. see the {{option}}`{self._options_by_id[links[i]]}` option"
                     else:
-                        md_links += f"{i+1}. " + md_escape(links[i])
+                        md_links += f"{i + 1}. {md_escape(links[i])}"
                 result.append(self._render(md_links))
 
             result.append(".RE")

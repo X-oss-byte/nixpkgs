@@ -64,14 +64,14 @@ class BaseConverter(Converter[md.TR], Generic[md.TR]):
                 if fragment_type not in get_args(FragmentType):
                     raise RuntimeError(f"unsupported structural include type '{typ}'")
                 self._current_type.append(cast(FragmentType, fragment_type))
-                token.type = 'included_' + typ
+                token.type = f'included_{typ}'
                 self._process_include_args(token, args, self.INCLUDE_FRAGMENT_ALLOWED_ARGS)
                 self._parse_included_blocks(token, args)
                 self._current_type.pop()
         return tokens
 
     def _process_include_args(self, token: Token, args: dict[str, str], allowed: set[str]) -> None:
-        ns = self.INCLUDE_ARGS_NS + ":"
+        ns = f"{self.INCLUDE_ARGS_NS}:"
         args = { k[len(ns):]: v for k, v in args.items() if k.startswith(ns) }
         if unknown := set(args.keys()) - allowed:
             assert token.map
@@ -171,7 +171,7 @@ class ManualDocBookRenderer(RendererMixin, DocBookRenderer):
         assert tokens[1].children
         assert tokens[4].children
         if (maybe_id := cast(str, tokens[0].attrs.get('id', ""))):
-            maybe_id = "xml:id=" + xml.quoteattr(maybe_id)
+            maybe_id = f"xml:id={xml.quoteattr(maybe_id)}"
         return (f'<book xmlns="http://docbook.org/ns/docbook"'
                 f'      xmlns:xlink="http://www.w3.org/1999/xlink"'
                 f'      {maybe_id} version="5.0">'
@@ -426,6 +426,7 @@ class ManualHTMLRenderer(RendererMixin, HTMLRenderer):
                 if next_level:
                     result.append(f'<dd><dl>{"".join(next_level)}</dl></dd>')
             return result
+
         def build_list(kind: str, id: str, lst: Sequence[TocEntry]) -> str:
             if not lst:
                 return ""
@@ -439,6 +440,7 @@ class ManualHTMLRenderer(RendererMixin, HTMLRenderer):
                 f'<dl>{"".join(entries)}</dl>'
                 '</div>'
             )
+
         # we don't want to generate the "Title of Contents" header for sections,
         # docbook doesn't and it's only distracting clutter unless it's the main table.
         # we also want to generate tocs only for a top-level section (ie, one that is
@@ -457,16 +459,15 @@ class ManualHTMLRenderer(RendererMixin, HTMLRenderer):
             return ""
         figures = build_list("Figures", "list-of-figures", toc.figures)
         examples = build_list("Examples", "list-of-examples", toc.examples)
-        return "".join([
-            f'<div class="toc">',
-            ' <p><strong>Table of Contents</strong></p>' if print_title else "",
-            f' <dl class="toc">'
-            f'  {"".join(items)}'
-            f' </dl>'
-            f'</div>'
-            f'{figures}'
-            f'{examples}'
-        ])
+        return "".join(
+            [
+                '<div class="toc">',
+                ' <p><strong>Table of Contents</strong></p>'
+                if print_title
+                else "",
+                f' <dl class="toc">  {"".join(items)} </dl></div>{figures}{examples}',
+            ]
+        )
 
     def _make_hN(self, level: int) -> tuple[str, str]:
         # for some reason chapters don't increase the hN nesting count in docbook xslts. duplicate
@@ -646,17 +647,18 @@ class HTMLConverter(BaseConverter[ManualHTMLRenderer]):
             title = prefix + title_html
             toc_html = f"{n}. {title_html}"
             title_html = f"Appendix&nbsp;{n}"
-        elif typ in ['example', 'figure']:
+        elif typ in {'example', 'figure'}:
             # skip the prepended `{Example,Figure} N. ` from numbering
             toc_html, title = self._renderer.renderInline(inlines.children[2:]), title_html
             # xref title wants only the prepended text, sans the trailing colon and space
-            title_html = self._renderer.renderInline(inlines.children[0:1])
+            title_html = self._renderer.renderInline(inlines.children[:1])
         else:
             toc_html, title = title_html, title_html
             title_html = (
                 f"<em>{title_html}</em>"
                 if typ == 'chapter'
-                else title_html if typ in [ 'book', 'part' ]
+                else title_html
+                if typ in {'book', 'part'}
                 else f'the section called “{title_html}”'
             )
         return XrefTarget(id, title_html, toc_html, re.sub('<.*?>', '', title), path, drop_fragment)
@@ -685,10 +687,7 @@ class HTMLConverter(BaseConverter[ManualHTMLRenderer]):
                 failed = True # do another round and report the first error
             xref_queue = deferred
 
-        paths_seen = set()
-        for t in self._xref_targets.values():
-            paths_seen.add(t.path)
-
+        paths_seen = {t.path for t in self._xref_targets.values()}
         if len(paths_seen) == 1:
             for (k, t) in self._xref_targets.items():
                 self._xref_targets[k] = XrefTarget(

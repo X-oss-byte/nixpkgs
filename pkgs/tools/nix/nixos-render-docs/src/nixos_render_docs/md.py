@@ -332,9 +332,7 @@ def _parse_blockattrs(info: str) -> Optional[tuple[AttrBlockKind, Optional[str],
     # whetever restrictions we want to enforce for that kind of block.
     if len(classes) == 1 and classes[0] in get_args(AdmonitionKind):
         # don't want to support ids for admonitions just yet
-        if id is not None:
-            return None
-        return ('admonition', id, classes)
+        return None if id is not None else ('admonition', id, classes)
     if classes == ['example']:
         return ('example', id, classes)
     elif classes == ['figure']:

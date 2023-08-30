@@ -50,7 +50,9 @@ for arch in versions.keys():
 
     last_current_version = current_version
     last_new_version = new_version
-    logging.info(f"Update found ({arch}): enpass: {current_version} -> {new_version['version']}")
+    logging.info(
+        f"Update found ({arch}): enpass: {last_current_version} -> {new_version['version']}"
+    )
     versions[arch]['path'] = new_version['path']
     versions[arch]['sha256'] = new_version['sha256']
     versions[arch]['version'] = new_version['version']

@@ -40,8 +40,7 @@ def nix_prefetch_git(url, rev):
 def get_current_revision():
     with open(DICTIONARIES_CHROMIUM_NIX) as f:
         for line in f:
-            rev = re.search(r'^        rev = "(.*)";', line)
-            if rev:
+            if rev := re.search(r'^        rev = "(.*)";', line):
                 return rev.group(1)
     sys.exit(1)
 
